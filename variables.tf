@@ -10,6 +10,10 @@ variable "layer_name" {
   default = "nasuni-labs-os-lambda-layer"
 }
 
+variable "nacscheduler_uid" {
+  type = string
+  default = ""
+}
 
 variable "nac_scheduler_ip_addr" {
   default = ""
