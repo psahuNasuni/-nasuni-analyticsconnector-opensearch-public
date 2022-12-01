@@ -489,6 +489,11 @@ data "local_file" "bkt" {
   depends_on = [null_resource.nmc_api_data]
 }
 
+output "latest_toc_handle_processed" {
+  value      = data.local_file.toc.content
+  depends_on = [data.local_file.toc]
+}
+
 
 output "source_bucket" {
   value      = data.local_file.bkt.content
