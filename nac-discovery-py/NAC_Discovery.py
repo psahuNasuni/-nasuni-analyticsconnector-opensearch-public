@@ -10,7 +10,7 @@ from requests_aws4auth import AWS4Auth
 import urllib.parse
 from botocore.exceptions import ClientError
 from datetime import *
-import shlex,subprocess
+import shlex,subprocess,json
 from urllib.parse import unquote_plus
 import elasticsearch
 # import PyPDF2
@@ -21,6 +21,9 @@ import fitz
 from requests.auth import HTTPBasicAuth
 from docx import Document
 import pandas as pd
+import logging
+import ssl
+import urllib3
 
 
 logging.getLogger().setLevel(logging.INFO)
@@ -28,12 +31,12 @@ logging.info(f'date={date}')
 cfn = boto3.resource('cloudformation')
 def lambda_handler(event, context):
     logging.info('lambda_handler starts...')
-    print("Lambda function ARN:", context.invoked_function_arn)
+    logging.info("Lambda function ARN:".format(context.invoked_function_arn))
     runtime_region = os.environ['AWS_REGION'] 
     context_arn=context.invoked_function_arn
     u_id=context_arn.split('-')[-1]
-    print('u_id',u_id)
-    print('***********************************************')
+    logging.info('u_id'.format(u_id))
+    logging.info('***********************************************')
     s3 = boto3.client('s3')        
     data={}
     doc_list=[]
@@ -45,7 +48,7 @@ def lambda_handler(event, context):
     role = secret_data_internal['discovery_lambda_role_arn']
     username=secret_nct_nce_admin['nac_es_admin_user']
     role_data = '{"backend_roles":["' +role + '"],"hosts": [],"users": ["'+username+'"]}'
-    print('role_data',role_data)
+    logging.info('role_data'.format(role_data))
     with open("/tmp/"+"/data.json", "w") as write_file:
         write_file.write(role_data)
         
@@ -59,17 +62,17 @@ def lambda_handler(event, context):
 
     headers = {'content-type': 'application/json'}
     response = requests.put(url, auth=HTTPBasicAuth(username, password), headers=headers, data=role_data)
-    print(response.text)
-    
-    #Deletion of folder from s3
-    
+    logging.info("response.text {}".format(response.text))
+    share_data=call_nmc_apis(runtime_region,secret_data_internal) 
+    #traversing thru each file metadata and data and adding those fields into dictionary
     
     for record in event['Records']:
-        print(record)
+        logging.info(record)
         data['dest_bucket'] = record['s3']['bucket']['name']
         data['object_key'] = unquote_plus(record['s3']['object']['key'])
         data['size'] = str(record['s3']['object'].get('size', -1))
         file_name=os.path.basename(data['object_key'])
+        data['file_name'] = file_name
         data['event_name'] = record['eventName']
         data['event_time'] = record['eventTime']
         data['awsRegion'] = record['awsRegion']
@@ -80,69 +83,170 @@ def lambda_handler(event, context):
         #data['root_handle'] = secret_data_internal['root_handle'].replace('.','_').lower()
         data['root_handle'] = re.sub('[!@#$%^&*()+?=,<>/.]', '-', secret_data_internal['root_handle']).lower()
         data['source_bucket'] = secret_data_internal['discovery_source_bucket']
-        print("data['object_key']",data['object_key'])  
-        print("data['dest_bucket']",data['dest_bucket'])  
+        logging.info("data['object_key'] = {}".format(data['object_key']))  
+        logging.info("data['dest_bucket'] = {}".format(data['dest_bucket']))  
         obj1 = s3.get_object(Bucket=data['dest_bucket'], Key=data['object_key'])
-        if data['extension'] in ['csv','txt']:
-            data['content'] = obj1['Body'].read().decode('utf-8')
-        elif data['extension'] == 'pdf':
-            file_content = obj1['Body'].read()
-            text = ""
-            with fitz.open(stream=file_content, filetype="pdf") as doc:
+        if  data['extension'] in ['txt','csv','docx','doc','pdf','xlsx','xls','pptx','ppt']:
                 
-                # iterating through pdf file pages
-                for page in doc:
-                    # fetching & appending text to text variable of each page
-                    text += page.getText()
+            if data['extension'] in ['csv','txt']:
+                data['content'] = obj1['Body'].read().decode('utf-8')
+            elif data['extension'] == 'pdf':
+                file_content = obj1['Body'].read()
+                text = ""
+                with fitz.open(stream=file_content, filetype="pdf") as doc:
+                    
+                    # iterating through pdf file pages
+                    for page in range(doc.page_count):
+                        # fetching & appending text to text variable of each page
+                        # text += page.getText()
+                        text += doc.get_page_text(page) 
+                    
+                data['content'] = text
+            elif data['extension'] in ['docx','doc']:
+               fs = obj1['Body'].read()
+               sentence = str(parseDocx(fs))
+               logging.info('docx data {} '.format(sentence))
+               data['content'] = sentence
+            elif data['extension'] in ['xlsx','xls']:
+                file_content = obj1['Body'].read()
+                read_excel_data = io.BytesIO(file_content)
+                df = pd.read_excel(read_excel_data) 
+                df = df.to_string() 
+                logging.info('xlsx data {}'.format(df))
+                data['content'] = df 
+            elif data['extension'] in ['pptx','ppt']:
+                print('data[extension] elif',data['extension'])
+                pptx_content = obj1['Body'].read()
+                ppt = Presentation(io.BytesIO(pptx_content))
+                pptx_data=''
+                for slide in ppt.slides:
+                    for shape in slide.shapes:
+                        if not shape.has_text_frame:
+                            continue
+                        for paragraph in shape.text_frame.paragraphs:
+                            for run in paragraph.runs:
+                                pptx_data+=run.text
+                logging.info("pptx data {}".format(pptx_data))
+                data['content'] = pptx_data
+        else:
+            data['content'] =data['file_name']
+        share_path_last_element=None
+        list_after_index=None
+        if share_data['name']  and share_data['path']:
+            for name,path in zip(share_data['name'],share_data['path']):
 
-            print('pdf data priting',text)
-            data['content'] = text
-        elif data['extension'] in ['docx','doc']:
-           fs = obj1['Body'].read()
-           sentence = str(parseDocx(fs))
-           print('docx data priting',sentence)
-           data['content'] = sentence
-        elif data['extension'] in ['xlsx','xls']:
-            file_content = obj1['Body'].read()
-            read_excel_data = io.BytesIO(file_content)
-            df = pd.read_excel(read_excel_data) 
-            df = df.to_string() 
-            print('xlsx data priting',df)
-            data['content'] = df 
-        elif data['extension'] == 'pptx':
-            print('data[extension] elif',data['extension'])
-            pptx_content = obj1['Body'].read()
-            ppt = Presentation(io.BytesIO(pptx_content))
-            pptx_data=''
-            for slide in ppt.slides:
-                for shape in slide.shapes:
-                    if not shape.has_text_frame:
-                        continue
-                    for paragraph in shape.text_frame.paragraphs:
-                        for run in paragraph.runs:
-                            pptx_data+=run.text
-            print(pptx_data)
-            data['content'] = pptx_data
-            
-            
-
+                if path in data['object_key']:
+                    share_path_last_element=path.split('/')[-1] 
+                    logging.info('148 share_path_last_element {}'.format(share_path_last_element))
+                    full_path=data['object_key']
+    
+                    full_path_with_share_name=full_path.replace(path,'/'+name)
+                    logging.info('full_path_with_share_name {}'.format(full_path_with_share_name))
+                    index_of_last_element=full_path_with_share_name.index(name)
+    
+                    list_after_index=full_path_with_share_name[index_of_last_element:]
+                    
         if secret_data_internal['web_access_appliance_address']!='not_found':
-            data['access_url']='https://'+secret_data_internal['web_access_appliance_address']+'/fs/view/'+data['volume_name']+'/'+file_name
+            if share_path_last_element != None:
+                if share_data['name'] and share_data['path'] and share_path_last_element in data['object_key']:
+                    # data['access_url']='https://'+secret_data_internal['web_access_appliance_address']+'/fs/view/'+secret_data_internal['share_name']+'/'+list_after_index
+                    data['access_url']='https://'+secret_data_internal['web_access_appliance_address']+'/fs/view/'+list_after_index
+            else:
+                data['access_url']='https://'+secret_data_internal['web_access_appliance_address']+'/fs/view/'+data['volume_name']+'/'+'/'.join(data['object_key'].split('/')[3:])
         else:
             data['access_url']=secret_data_internal['web_access_appliance_address']
-        print('data',data)
-        print('secret_data_internal',secret_data_internal)
+        
+        logging.info('access_url = {}'.format(data['access_url']))
+        percent_20_url=data['access_url'].replace(' ','%20')
+        logging.info('After appending percent 20 url = {}'.format(percent_20_url))
+        data['access_url']=percent_20_url
+        logging.info('secret_data_internal = {}'.format(secret_data_internal))
         es_obj = launch_es(secret_nct_nce_admin['nac_es_url'],data['awsRegion'])
         
         check=connect_es(es_obj,data['root_handle'], data) 
     #Deletion of folder from s3
     if check == 0:
-        print('Insertion into ES success.Hence deleting s3 bucket folder')
+        logging.info('Insertion into ES success.Hence deleting s3 bucket folder')
         del_s3_folder(data['object_key'],data['dest_bucket'])
     else:
-        print('Not deleting the s3 bucket folder all data not got loaded into ES.') 
+        logging.info('Not deleting the s3 bucket folder all data not got loaded into ES.') 
 
     logging.info('lambda_handler ends...')
+    
+def call_nmc_apis(region,internal_secret):
+    user_secret = get_secret(internal_secret['user_secret_name'],region)
+    logging.info('user_secret = {}'.format(user_secret))
+    endpoint=user_secret['nmc_api_endpoint']
+    username=user_secret['nmc_api_username']
+    password=user_secret['nmc_api_password']
+    if not os.environ.get('PYTHONHTTPSVERIFY', '') and getattr(ssl, '_create_unverified_context', None):
+        ssl._create_default_https_context = ssl._create_unverified_context
+    url = 'https://' + endpoint + '/api/v1.1/auth/login/'
+    logging.info(url)
+    try :
+        values = {'username': username, 'password': password}
+        data = urllib.parse.urlencode(values).encode("utf-8")
+        logging.info(data)
+        response = urllib.request.urlopen(url, data, timeout=5)
+        logging.info(response)
+        result = json.loads(response.read().decode('utf-8'))
+        logging.info(result)
+    except Exception as e:
+        logging.error('ERROR: {0}'.format(str(e)))
+        return 0
+        
+    urllib3.disable_warnings()
+    headers = {
+        'Accept': 'application/json',
+        'Authorization': 'Token {}'.format(result['token'])
+    }
+    print(headers)
+    vv_guid=None
+    try:
+        r = requests.get('https://' + endpoint + '/api/v1.1/volumes/', headers = headers,verify=False)
+    except requests.exceptions.RequestException as err:
+        logging.error ("OOps: Something Else {}".format(err))
+    except requests.exceptions.HTTPError as errh:
+        logging.error ("Http Error: {}".format(errh))
+    except requests.exceptions.ConnectionError as errc:
+        logging.error ("Error Connecting: {}".format(errc))
+    except requests.exceptions.Timeout as errt:
+        logging.error ("Timeout Error: {}".format(errt))
+    except Exception as e:
+        logging.error('ERROR: {0}'.format(str(e)))
+    
+    # print(r.json())
+    for i in r.json()['items']:
+        if i['name'] == internal_secret['volume_name']:
+            vv_guid = i['guid']
+            print(vv_guid)
+    try:
+        r = requests.get('https://' + endpoint + '/api/v1.1/volumes/filers/shares/', headers = headers,verify=False)
+    except requests.exceptions.RequestException as err:
+        logging.error ("OOps: Something Else {}".format(err))
+    except requests.exceptions.HTTPError as errh:
+        logging.error ("Http Error: {}".format(errh))
+    except requests.exceptions.ConnectionError as errc:
+        logging.error ("Error Connecting: {}".format(errc))
+    except requests.exceptions.Timeout as errt:
+        logging.error ("Timeout Error: {}".format(errt))
+    except Exception as e:
+        logging.error('ERROR: {0}'.format(str(e)))
+    
+    share_data={}
+    name=[]
+    path=[]
+    for i in r.json()['items']:
+        if i['volume_guid'] == vv_guid and i['path']!='\\' and i['browser_access']==True:
+            name.append(r""+i['name'].replace('\\','/'))
+            path.append(r""+i['path'].replace('\\','/'))
+            
+
+    share_data['name']=name
+    share_data['path']=path
+    logging.info(share_data) 
+    return share_data
+    
 def parseDocx(data):
     data = io.BytesIO(data)
     document = Document(docx = data)
@@ -153,9 +257,9 @@ def parseDocx(data):
     return content
 
 def del_s3_folder(full_path,dest_bucket):
-    print("Full Path:-",full_path)
+    logging.info("Full Path:-".format(full_path))
     path=os.path.dirname(full_path)
-    print("Folder Path:-",path)
+    logging.info("Folder Path:-".format(path))
     s3 = boto3.resource('s3') 
     bucket = s3.Bucket(dest_bucket)
     bucket.objects.filter(Prefix=path).delete()
@@ -185,7 +289,8 @@ def connect_es(es,index, data):
                 if idx_content == data['content'] and idx_object_key == data['object_key']:
                     flag = 1
                     print("Indexing is doing when the idx_content and idx_object_key has matched", resp)
-                    es.index(index=i['_index'], doc_type="_doc", id=i['_id'], body=data)
+                    # es.index(index=i['_index'], doc_type="_doc", id=i['_id'], body=data)
+                    es.index(index=i['_index'], id=i['_id'], body=data)
                     break
 
         if flag == 0:
@@ -193,10 +298,11 @@ def connect_es(es,index, data):
             doc_list += [data]
             logging.info("\nAttempting to index the list of docs using helpers.bulk()")
             # use the helpers library's Bulk API to index list of Elasticsearch docs
-            resp = helpers.bulk(es, doc_list, index=data['root_handle'], doc_type="_doc")
+            # resp = helpers.bulk(es, doc_list, index=data['root_handle'], doc_type="_doc")
+            resp = helpers.bulk(es, doc_list, index=data['root_handle'])
             # print the response returned by Elasticsearch
-            print("helpers.bulk() RESPONSE:", resp)
-            print("helpers.bulk() RESPONSE:", json.dumps(resp, indent=4))
+            logging.info("helpers.bulk() RESPONSE: {}".format(resp))
+            logging.info("helpers.bulk() RESPONSE: {}".format(json.dumps(resp, indent=4)))
         return 0
     except Exception as e:
         logging.error('ERROR: {0}'.format(str(e)))
