@@ -132,19 +132,20 @@ def lambda_handler(event, context):
             data['content'] =data['file_name']
         share_path_last_element=None
         list_after_index=None
-        if share_data['name']  and share_data['path']:
-            for name,path in zip(share_data['name'],share_data['path']):
+        if share_data != None:
+            if share_data['name']  and share_data['path']:
+                for name,path in zip(share_data['name'],share_data['path']):
 
-                if path in data['object_key']:
-                    share_path_last_element=path.split('/')[-1] 
-                    logging.info('148 share_path_last_element {}'.format(share_path_last_element))
-                    full_path=data['object_key']
-    
-                    full_path_with_share_name=full_path.replace(path,'/'+name)
-                    logging.info('full_path_with_share_name {}'.format(full_path_with_share_name))
-                    index_of_last_element=full_path_with_share_name.index(name)
-    
-                    list_after_index=full_path_with_share_name[index_of_last_element:]
+                    if path in data['object_key']:
+                        share_path_last_element=path.split('/')[-1] 
+                        logging.info('148 share_path_last_element {}'.format(share_path_last_element))
+                        full_path=data['object_key']
+
+                        full_path_with_share_name=full_path.replace(path,'/'+name)
+                        logging.info('full_path_with_share_name {}'.format(full_path_with_share_name))
+                        index_of_last_element=full_path_with_share_name.index(name)
+
+                        list_after_index=full_path_with_share_name[index_of_last_element:]
                     
         if secret_data_internal['web_access_appliance_address']!='not_found':
             if share_path_last_element != None:
@@ -193,7 +194,7 @@ def call_nmc_apis(region,internal_secret):
         logging.info(result)
     except Exception as e:
         logging.error('ERROR: {0}'.format(str(e)))
-        return 0
+        return
         
     urllib3.disable_warnings()
     headers = {
