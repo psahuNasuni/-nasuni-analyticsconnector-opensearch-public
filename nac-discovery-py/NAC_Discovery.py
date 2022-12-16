@@ -63,8 +63,39 @@ def lambda_handler(event, context):
     headers = {'content-type': 'application/json'}
     response = requests.put(url, auth=HTTPBasicAuth(username, password), headers=headers, data=role_data)
     logging.info("response.text {}".format(response.text))
-    share_data=call_nmc_apis(runtime_region,secret_data_internal) 
+    # share_data=call_nmc_apis(runtime_region,secret_data_internal) 
     #traversing thru each file metadata and data and adding those fields into dictionary
+    
+    #traversing thru each file metadata and data and adding those fields into dictionary
+    bucket_name='nasuni-share-data-bucket-storage'    
+    # s3 = boto3.client('s3')
+    print(bucket_name)
+    
+    # List all of the files in the S3 bucket
+    response = s3.list_objects(Bucket=bucket_name)
+    
+    # Read the contents of each file in the S3 bucket
+    print('response',response)
+    
+    share_data={}
+    for obj in response['Contents']:
+        # Get the object key (i.e. the file name)
+        key = obj['Key']
+        s3.download_file(bucket_name, key, '/tmp/'+key)
+        # Read the contents of the file
+        # file_contents = s3.get_object(Bucket=bucket_name, Key=key)['Body'].read()
+    
+        # Print the contents of the file
+        # file_share_data=open('/tmp/'+key,'r')
+        
+        with open('/tmp/'+key, 'r') as f2:
+            if 'nmc_api_data_v_share_name' in '/tmp/'+key:
+                share_data['name'] = f2.read().split(',')
+            else:
+                share_data['path'] = f2.read().split(',')
+            # print(data_file)
+    logging.info(share_data)
+        # print(file_share_data.read())
     
     for record in event['Records']:
         logging.info(record)
@@ -135,7 +166,7 @@ def lambda_handler(event, context):
         if share_data != None:
             if share_data['name']  and share_data['path']:
                 for name,path in zip(share_data['name'],share_data['path']):
-
+                    
                     if path in data['object_key']:
                         share_path_last_element=path.split('/')[-1] 
                         logging.info('148 share_path_last_element {}'.format(share_path_last_element))
