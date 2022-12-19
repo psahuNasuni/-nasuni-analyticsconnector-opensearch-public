@@ -116,6 +116,7 @@ try:
 
     logging.info(share_data)
     bucket_name='nasuni-share-data-bucket-storage'
+    
     # Create an S3 client
     session = boto3.Session(profile_name='nasuni')
     s3 = session.client('s3')
@@ -135,9 +136,7 @@ try:
         # List all of the objects in the S3 bucket
         response = s3.list_objects(Bucket=bucket_name)
 
-        # Delete each object in the S3 bucket
-        for obj in response['Contents']:
-            s3.delete_object(Bucket=bucket_name, Key=obj['Key'])
+
     else:
         print('Bucket does not exist')
         s3.create_bucket(Bucket=bucket_name,CreateBucketConfiguration={'LocationConstraint':default_region})
@@ -150,8 +149,8 @@ try:
         share_path.write('-')
         share_name.close()
         share_path.close()
-        s3.upload_file('nmc_api_data_v_share_name_' + rid + '.txt', bucket_name, 'nmc_api_data_v_share_name_' + rid + '.txt')
-        s3.upload_file('nmc_api_data_v_share_path_' + rid + '.txt',bucket_name, 'nmc_api_data_v_share_path_' + rid + '.txt')
+        s3.upload_file('nmc_api_data_v_share_name_' + rid + '.txt', bucket_name, 'nmc_api_data_'+rid+'/nmc_api_data_v_share_name_' + rid + '.txt')
+        s3.upload_file('nmc_api_data_v_share_path_' + rid + '.txt', bucket_name, 'nmc_api_data_'+rid+'/nmc_api_data_v_share_path_' + rid + '.txt')
     else:
         logging.info('dict has data'.format(share_data))
         share_name = open('nmc_api_data_v_share_name_' + rid + '.txt', 'w')
@@ -160,9 +159,8 @@ try:
         share_path.write(str((','.join(share_data['path']))))
         share_name.close()
         share_path.close()
-        s3.upload_file('nmc_api_data_v_share_name_' + rid + '.txt', bucket_name, 'nmc_api_data_v_share_name_' + rid + '.txt')
-        s3.upload_file('nmc_api_data_v_share_path_' + rid + '.txt', bucket_name, 'nmc_api_data_v_share_path_' + rid + '.txt')
-
+        s3.upload_file('nmc_api_data_v_share_name_' + rid + '.txt', bucket_name, 'nmc_api_data_'+rid+'/nmc_api_data_v_share_name_' + rid + '.txt')
+        s3.upload_file('nmc_api_data_v_share_path_' + rid + '.txt', bucket_name, 'nmc_api_data_'+rid+'/nmc_api_data_v_share_path_' + rid + '.txt')
 
 
 
