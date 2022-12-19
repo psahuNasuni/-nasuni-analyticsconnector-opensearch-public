@@ -443,13 +443,13 @@ resource "random_id" "r_id" {
   byte_length = 1
 }
 data "local_file" "secRet" {
-  filename   = "${path.cwd}/Zsecret_${random_id.r_id.dec}.txt"
+  filename   = "${path.cwd}/Zsecret_${random_id.nac_unique_stack_id.hex}.txt"
   depends_on = [null_resource.nmc_api_data]
 
 }
 
 data "local_file" "accZes" {
-  filename   = "${path.cwd}/Zaccess_${random_id.r_id.dec}.txt"
+  filename   = "${path.cwd}/Zaccess_${random_id.nac_unique_stack_id.hex}.txt"
   depends_on = [null_resource.nmc_api_data]
 }
 
@@ -474,7 +474,7 @@ resource "null_resource" "nmc_api_data" {
 }
 
 data "local_file" "toc" {
-  filename   = "${path.cwd}/nmc_api_data_root_handle_${random_id.r_id.dec}.txt"
+  filename   = "${path.cwd}/nmc_api_data_root_handle_${random_id.nac_unique_stack_id.hex}.txt"
   depends_on = [null_resource.nmc_api_data]
 }
 
@@ -485,7 +485,7 @@ output "root_handle" {
 }
 
 data "local_file" "bkt" {
-  filename   = "${path.cwd}/nmc_api_data_source_bucket_${random_id.r_id.dec}.txt"
+  filename   = "${path.cwd}/nmc_api_data_source_bucket_${random_id.nac_unique_stack_id.hex}.txt"
   depends_on = [null_resource.nmc_api_data]
 }
 
@@ -501,7 +501,7 @@ output "source_bucket" {
 }
 
 data "local_file" "v_guid" {
-  filename   = "${path.cwd}/nmc_api_data_v_guid_${random_id.r_id.dec}.txt"
+  filename   = "${path.cwd}/nmc_api_data_v_guid_${random_id.nac_unique_stack_id.hex}.txt"
   depends_on = [null_resource.nmc_api_data]
 }
 
@@ -513,7 +513,7 @@ output "volume_guid" {
 
 
 data "local_file" "appliance_address" {
-  filename   = "${path.cwd}/nmc_api_data_external_share_url_${random_id.r_id.dec}.txt"
+  filename   = "${path.cwd}/nmc_api_data_external_share_url_${random_id.nac_unique_stack_id.hex}.txt"
   depends_on = [null_resource.nmc_api_data]
 }
 
