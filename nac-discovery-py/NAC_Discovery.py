@@ -29,8 +29,9 @@ import urllib3
 logging.getLogger().setLevel(logging.INFO)
 logging.info(f'date={date}')
 cfn = boto3.resource('cloudformation')
-def lambda_handler(event, context):
+def lambda_handler(event, context): 
     logging.info('lambda_handler starts...')
+    print('context.invoked_function_arn',context.invoked_function_arn)
     logging.info("Lambda function ARN:".format(context.invoked_function_arn))
     runtime_region = os.environ['AWS_REGION'] 
     context_arn=context.invoked_function_arn
@@ -76,26 +77,31 @@ def lambda_handler(event, context):
     
     # Read the contents of each file in the S3 bucket
     print('response',response)
-    
+    bucket_folder_name=None
     share_data={}
-    for obj in response['Contents']:
+    for obj in response['Contents']: 
         # Get the object key (i.e. the file name)
         key = obj['Key']
-        s3.download_file(bucket_name, key, '/tmp/'+key)
-        # Read the contents of the file
-        # file_contents = s3.get_object(Bucket=bucket_name, Key=key)['Body'].read()
-    
-        # Print the contents of the file
-        # file_share_data=open('/tmp/'+key,'r')
-        
-        with open('/tmp/'+key, 'r') as f2:
-            if 'nmc_api_data_v_share_name' in '/tmp/'+key:
-                share_data['name'] = f2.read().split(',')
-            else:
-                share_data['path'] = f2.read().split(',')
-            # print(data_file)
+        bucket_folder_name=key
+        # print('bucket_folder_name',bucket_folder_name)
+        print('key',key)  
+        if u_id in key:
+            print('found',key)
+            nmc_api_filename=os.path.basename(key)
+            print('nmc_api_filename',nmc_api_filename)
+            s3.download_file(bucket_name, key, '/tmp/'+nmc_api_filename)
+            
+            with open('/tmp/'+nmc_api_filename, 'r') as f2:
+                if 'nmc_api_data_v_share_name' in '/tmp/'+nmc_api_filename:
+                    share_data['name'] = f2.read().split(',')
+                else:
+                    share_data['path'] = f2.read().split(',')
+            
+                # print(data_file)
+            logging.info('deleting folder from s3 bucket nasuni-share-data-bucket-storage')
+            # s3.delete_object(Bucket=bucket_name, Key=key)
+    print(share_data)
     logging.info(share_data)
-        # print(file_share_data.read())
     
     for record in event['Records']:
         logging.info(record)
@@ -202,7 +208,10 @@ def lambda_handler(event, context):
         del_s3_folder(data['object_key'],data['dest_bucket'])
     else:
         logging.info('Not deleting the s3 bucket folder all data not got loaded into ES.') 
-
+    logging.info('Deleting the files from /tmp/ folder')
+    subprocess.call('rm -rf /tmp/*', shell=True)
+    
+    
     logging.info('lambda_handler ends...')
     
 def call_nmc_apis(region,internal_secret):
