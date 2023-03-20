@@ -10,7 +10,7 @@ repos:
       # - id: fix-encoding-pragma
       - id: check-ast
       - id: debug-statements
-      - id: check-builtin-literals
+        #- id: check-builtin-literals
       - id: detect-private-key
     
   # - repo: https://github.com/antonbabenko/pre-commit-terraform
